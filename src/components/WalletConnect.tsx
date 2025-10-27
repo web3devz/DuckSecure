@@ -3,6 +3,11 @@
 import { useState, useEffect } from 'react'
 import { Wallet, ChevronDown, LogOut, ExternalLink } from 'lucide-react'
 import { blockchainService, DUCKCHAIN_CONFIG } from '@/lib/blockchain'
+import {
+  connectWithWalletConnect,
+  disconnectWalletConnect,
+  isWalletConnectConfigured,
+} from '@/lib/walletConnect'
 
 export default function WalletConnect() {
   const [isConnected, setIsConnected] = useState(false)
@@ -64,12 +69,21 @@ export default function WalletConnect() {
   const connectWallet = async () => {
     setIsLoading(true)
     try {
-      const { address: walletAddress } = await blockchainService.connectWallet()
-      setAddress(walletAddress)
-      setIsConnected(true)
+      // Prefer EIP-1193 provider (window.ethereum) if present, otherwise try WalletConnect
+      if (window.ethereum) {
+        const { address: walletAddress } = await blockchainService.connectWallet()
+        setAddress(walletAddress)
+        setIsConnected(true)
+      } else if (isWalletConnectConfigured()) {
+        const { address: walletAddress } = await connectWithWalletConnect()
+        setAddress(walletAddress)
+        setIsConnected(true)
+      } else {
+        throw new Error('No injected wallet found and WalletConnect is not configured')
+      }
     } catch (error) {
       console.error('Wallet connection failed:', error)
-      alert('Failed to connect wallet. Please make sure you have MetaMask installed.')
+      alert('Failed to connect wallet. Please make sure you have a wallet installed or configure WalletConnect.')
     } finally {
       setIsLoading(false)
     }
@@ -87,6 +101,13 @@ export default function WalletConnect() {
   }
 
   const disconnectWallet = () => {
+    // Best-effort disconnect from WalletConnect and reset UI
+    try {
+      disconnectWalletConnect()
+    } catch (err) {
+      // ignore
+    }
+
     setIsConnected(false)
     setAddress(null)
     setDuckBalance('0')
